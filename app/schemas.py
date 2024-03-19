@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, List
 from datetime import datetime
 from enum import Enum
@@ -23,6 +23,8 @@ class ServiceType(str, Enum):
 
 # Schema for creating a service request
 class ServiceRequestCreate(BaseModel):
+    class Config(ConfigDict):
+        arbitrary_types_allowed = True
     user_id: int = 2329987645
     academic_year: Optional[str] = "year 3"
     course_code: Optional[str] = "MED321"
@@ -43,6 +45,8 @@ class ServiceRequestCreate(BaseModel):
 
 # Schema for the service request response
 class ServiceRequestResponse(BaseModel):
+    class Config(ConfigDict):
+        arbitrary_types_allowed = True
     id: int
     context_prompt: str
     user_response: str
@@ -54,6 +58,8 @@ class ServiceRequestResponse(BaseModel):
 
 # Schema for collecting user feedback
 class ServiceRequestFeedback(BaseModel):
+    class Config(ConfigDict):
+        arbitrary_types_allowed = True
     id: int
     user_feedback: Optional[str]
     response_grade: Optional[float]

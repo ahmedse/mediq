@@ -9,12 +9,15 @@ import logging
 from app.database import SessionLocal
 from sqlalchemy.exc import SQLAlchemyError
 from decimal import Decimal
+from fastapi import HTTPException
+from dotenv import load_dotenv
 logger = logging.getLogger(__name__)
+load_dotenv()  # This loads the .env file into environment variables
 
 class TextProcessingService:
     def __init__(
         self, 
-        service_type: str, 
+        service_type: str,         
         text: str,
         academic_year: Optional[str] = None,
         course_code: Optional[str] = None,
@@ -23,6 +26,7 @@ class TextProcessingService:
         topic: Optional[str] = None,
         user_prompt: Optional[str] = None
     ):
+        self.user_id= 2329987645
         self.service_type = service_type
         self.text = text
         self.academic_year = academic_year
@@ -32,55 +36,78 @@ class TextProcessingService:
         self.topic = topic
         self.user_prompt = user_prompt
 
-        # 
-        self.openai_api_key = "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"
+    def process_text(self):
+        # Validate service_type
+        if self.service_type not in ServiceType.__members__:
+            error_message = f"Invalid service type: {self.service_type}"
+            logger.error(error_message)
+            raise HTTPException(status_code=400, detail=error_message)
 
-    def process_text(self):             
+        # Validate text
+        if not self.text or len(self.text) < 2:
+            error_message = "Text must not be empty and must have at least 2 characters."
+            logger.error(error_message)
+            raise HTTPException(status_code=400, detail=error_message)
+
+        # Database session
         db = SessionLocal()
-        service_request_data = {
-            'user_id': 2329987645,
-            'service_type': self.service_type,
-            'text': self.text,
-            'academic_year': self.academic_year,
-            'course_code': self.course_code,  # Fixed this line
-            'course_title': self.course_title,  # And this line
-            'lecture_title': self.lecture_title,
-            'topic': self.topic,
-            'user_prompt': self.user_prompt,
-        }
-
         try:
-            service_request = crud.create_service_request(db, service_request_data)            
-            # ... [rest of the logic for processing the request]
+            # Prepare service request data
+            service_request_data = {
+                'user_id': 2329987645,
+                'service_type': self.service_type,
+                'text': self.text,
+                'academic_year': self.academic_year,
+                'course_code': self.course_code,  # Fixed this line
+                'course_title': self.course_title,  # And this line
+                'lecture_title': self.lecture_title,
+                'topic': self.topic,
+                'user_prompt': self.user_prompt,
+            }
 
-        except SQLAlchemyError as e:
-            print(f"Database operation failed: {e}")
-            # Log the error and the input data that caused it
-            logger.error(f"Database operation failed: {e}")
-            logger.error(f"Failed data: {service_request_data}")
-            db.rollback()  # Rollback the session in case of error
-            return None  # You may want to return an error message or code instead
-        # finally:
-        #     db.close()  # Ensure the db session is closed after the operation
-                      
-        db.refresh(service_request)
-        self.id= service_request.id
-        
-        # Implement the logic for different service types
-        if self.service_type == ServiceType.TRANSLATION.name:            
-            self.context_prompt, self.user_response, self.processing_time = self._handle_translation()
+            # Create a new service request in the database
+            service_request = crud.create_service_request(db, service_request_data)
+            db.refresh(service_request)
+            self.id= service_request.id
 
-            # update the service request data
+            # Process the request based on its type
+            if self.service_type == ServiceType.TRANSLATION.name:
+                try:
+                    # Perform the translation handling logic
+                    self.context_prompt, self.user_response, self.processing_time, generated_raw = self._handle_translation()
+                    logger.info(f"Success handling service request: [User ID: {str(self.user_id) }, Service Type: {self.service_type} ]")
+                except Exception as translation_error:
+                    logger.error(f"Translation handling failed: {translation_error}")
+                    db.rollback()
+                    raise HTTPException(status_code=500, detail="Failed to handle translation service.")
+            # Additional service type handling can be added here
+            else:
+                raise HTTPException(status_code=400, detail="Unsupported service type")
+
+            # Commit the updates to the database, update the service request data
             service_request.context_prompt = self.context_prompt
             service_request.user_response = self.user_response
+            service_request.generated_raw = generated_raw            
             service_request.processing_time = self.processing_time
             db.add(service_request)
             db.commit()
-            
-            return self.context_prompt, self.user_response, self.processing_time
-        # Add other service type handlers as needed
-        else:
-            raise ValueError("Unsupported service type")
+        except SQLAlchemyError as e:
+            logger.error(f"Database operation failed: {e}")
+            db.rollback()
+            raise HTTPException(status_code=500, detail="Database operation failed.")
+        except Exception as e:
+            # Handle any other unforeseen exceptions
+            logger.error(f"An error occurred: {e}")
+            raise HTTPException(status_code=500, detail="An unexpected error occurred.")
+        finally:
+            # Ensure the db session is closed after the operation
+            db.close()
+        # Return the results
+        return {
+            "context_prompt": self.context_prompt,
+            "user_response": self.user_response,
+            "processing_time": self.processing_time
+        }
 
     def _handle_translation(self):   
         
@@ -89,7 +116,7 @@ class TextProcessingService:
         client = OpenAI(
             # This is the default and can be omitted
             # api_key=os.environ.get("OPENAI_API_KEY"),
-            api_key= self.openai_api_key,
+            api_key= os.getenv("OPENAI_API_KEY"),
         )
 
         try:
@@ -103,7 +130,6 @@ class TextProcessingService:
                     {"role": "user", "content": f"{context_prompt}"}
                 ]
             )
-            print(f"response: {response}")  
             # End timing
             processing_time = time.time() - start_time
             # Extract the response text
@@ -114,10 +140,9 @@ class TextProcessingService:
 
             return context_prompt, translated_text, processing_time, generated_raw
         except Exception as e:
-            # Handle API errors
-            print(f"Error calling OpenAI API: {str(e)}")
+            logger.error(f"Error calling OpenAI API: {str(e)}")
             raise e  # Or handle it in another way appropriate for your application
-        return None, None, None, None
+        return None
     
     # ... other private methods for handling specific services
 

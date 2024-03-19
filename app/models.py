@@ -1,12 +1,12 @@
 # app/models.py
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy import Column, ForeignKey, Integer, String, Text, Enum, DateTime, Boolean, Numeric
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
-from .database import Base
+from .database import Base 
 import enum
 
-Base = declarative_base()
+# Base = declarative_base()
 
 # Enum for service types
 class ServiceType(enum.Enum):
@@ -64,6 +64,7 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
+    email = Column(Text, default='user@example.com')    
     total_messages = Column(Integer, default=0)  # Total number of messages sent since account creation
     weekly_quota = Column(Integer, default=200)  # Weekly quota for service requests
     quota_used = Column(Integer, default=0)  # Number of service requests used in the current week

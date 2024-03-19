@@ -6,13 +6,8 @@ from .services import TextProcessingService
 from .config import config
 from .models import ServiceType
 import logging.config
-
-# Configure logging
-logging.config.fileConfig(config.LOGGING_CONFIG_PATH)
-logger = logging.getLogger(__name__)
-
-# Create database tables
-models.Base.metadata.create_all(bind=database.engine)
+import os
+from config import AppConfig, logger
 
 app = FastAPI()
 
@@ -35,13 +30,13 @@ router = APIRouter()
 
 @router.post("/process_text/", response_model=ServiceRequestResponse)
 async def process_text(service_request: ServiceRequestCreate, db: Session = Depends(database.get_db)):
-    # Assuming service_request is an object with a service_type attribute    
+    # Assuming service_request is an object with a service_type attribute 
     try:
         service_type_enum = ServiceType(service_request.service_type)
     except ValueError as e:
         logger.error(f"Invalid service type: {service_request.service_type}")
         raise HTTPException(status_code=400, detail="Invalid service type provided")
-   
+    logger.info(f"New service request: {service_type_enum.name}")   
     # Create an instance of TextProcessingService with the enum and text
     service = TextProcessingService(
         service_type=service_type_enum.name, 
@@ -56,21 +51,20 @@ async def process_text(service_request: ServiceRequestCreate, db: Session = Depe
     try:
         # Process the text with the service
         context_prompt, user_response, processing_time = service.process_text()
-        logger.info(f"Processed text: {user_response}, Processing time: {processing_time}")
-
+      
         # Create response object according to ServiceRequestResponse schema
         response_object = ServiceRequestResponse(
             id= service.id,
-            context_prompt=service.context_prompt,
-            user_response=service.user_response,
+            context_prompt=context_prompt,
+            user_response=user_response,
             processed_successfully=True,
-            processing_time=service.processing_time
+            processing_time= 0.0
         )
         return response_object
     except Exception as e:
         # Log the error and raise an HTTPException with the details
         logger.error(f"Error processing text: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal Server Error")
+        raise HTTPException(status_code=500, detail="aaa Internal Server Error")
 
 # Include the router in the app
 app.include_router(router)
